@@ -1,0 +1,68 @@
+---
+title: "text"
+author: "Aria Huang"
+date: '2020-12-04'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytext)
+library(here)
+library(topicmodels)
+library(sotu)
+
+library(cleanNLP)
+cnlp_init_udpipe()
+```
+
+## R Markdown
+
+```{r data}
+sotu<-sotu_meta
+# put the text into the column of meta dataset
+sotu$text <- sotu_text
+
+anno <- cnlp_annotate(sotu)
+```
+
+## Including Plots
+```{r}
+sotu_clean<-sotu %>%
+  unnest_tokens ( output = word, input = text ) %>%
+  filter ( !str_detect(word, ' ^[0-9]*')) %>%
+  anti_join (stop_words) %>%
+  mutate( word = SnowballC::wordStem (word))
+
+sotu_clean %>%
+  group_by(year, sotu_type) %>%
+  summarize(n = n()) %>%
+  ggplot(aes(year, n)) +
+    geom_line(color = grey(0.8)) +
+    geom_point(aes(color = sotu_type)) +
+    geom_smooth(method="loess", formula = y ~ x) +
+    theme_minimal()
+
+```
+
+```{r pressure, echo=FALSE}
+sotu_dtm <-sotu %>%
+  unnest_tokens ( output = word, input = text ) %>%
+  filter ( !str_detect(word, ' ^[0-9]*')) %>%
+  anti_join (stop_words) %>%
+  mutate( word = SnowballC::wordStem (word)) %>%
+  count(president, word) %>%
+  cast_dtm( document = president,
+            term = word,
+            value = n)
+sotu_dtm
+removeSparseterms(sotu_dtm, sparse = 0.95)
+```
+
+```{r}
+sotu_topic<-LDA(sotu_dtm, k =20, control = list(seed = 123))
+
+```
+`
+
