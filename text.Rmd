@@ -12,6 +12,7 @@ library(tidytext)
 library(here)
 library(topicmodels)
 library(sotu)
+library(tm)
 
 library(cleanNLP)
 cnlp_init_udpipe()
@@ -27,14 +28,29 @@ sotu$text <- sotu_text
 anno <- cnlp_annotate(sotu)
 ```
 
-## Including Plots
-```{r}
+```{r text processing}
+x <- "a1~!@#$%^&*(){}_+:\"<>?,./;'[]-=" 
+
 sotu_clean<-sotu %>%
-  unnest_tokens ( output = word, input = text ) %>%
+  unnest_tokens ( output = word, input = text) %>%
+  #remove numbers
   filter ( !str_detect(word, ' ^[0-9]*')) %>%
+  #remove stop words
   anti_join (stop_words) %>%
+  # remove stems
   mutate( word = SnowballC::wordStem (word))
 
+#remove special characters from word column
+sotu_token <-as.data.frame(gsub("[[:punct:]]", "", as.matrix(sotu_clean))) 
+sotu_tokens <-as.data.frame(gsub('[0-9]+', '', as.matrix(sotu_token))) 
+sotu_tokens <- as.data.frame(gsub("[[:space:]]", "", as.matrix(sotu_tokens)))
+
+
+```
+
+## Plots
+```{r}
+# How the length of the State of the Union has changed over time
 sotu_clean %>%
   group_by(year, sotu_type) %>%
   summarize(n = n()) %>%
@@ -42,11 +58,36 @@ sotu_clean %>%
     geom_line(color = grey(0.8)) +
     geom_point(aes(color = sotu_type)) +
     geom_smooth(method="loess", formula = y ~ x) +
-    theme_minimal()
+    theme_minimal()+
+    labs( title = "How the length of the State of the Union has changed over time",
+          x = "Year",
+          y = "Nu,ber of tokens in speeach",
+          color= "Document type")
+
+```
+```{r}
+# common words
+
+sotu_tokens %>%
+  group_by (word) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n)) %>%
+  #number 1 is blank
+  slice(2:21) %>%
+  ggplot ( mapping = aes ( x = reorder(word, n ), y = n))+
+  geom_bar (stat= 'identity')+
+  coord_flip()+
+  theme_minimal()+
+  labs( title = "Most 20 common words in State of the Union",
+        x = "",
+        y= "Number of occurence")
+
 
 ```
 
+
 ```{r pressure, echo=FALSE}
+# dtm
 sotu_dtm <-sotu %>%
   unnest_tokens ( output = word, input = text ) %>%
   filter ( !str_detect(word, ' ^[0-9]*')) %>%
@@ -56,12 +97,16 @@ sotu_dtm <-sotu %>%
   cast_dtm( document = president,
             term = word,
             value = n)
-sotu_dtm
-removeSparseterms(sotu_dtm, sparse = 0.95)
+sotu_dtm 
+
+sotu_clean %>%
+  cast_p
+
+removeSparseTerms(sotu_dtm, sparse = 0.95)
 ```
 
 ```{r}
-sotu_topic<-LDA(sotu_dtm, k =20, control = list(seed = 123))
+sotu_topic<-LDA(sotu_dtm, k =16, control = list(seed = 123))
 
 ```
 `
