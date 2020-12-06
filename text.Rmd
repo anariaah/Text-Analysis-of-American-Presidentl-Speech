@@ -13,6 +13,12 @@ library(here)
 library(topicmodels)
 library(sotu)
 library(tm)
+library(wordcloud)
+library(reshape2)
+install.packages("ggraph")
+library(ggraph)
+library(igraph)
+
 
 library(cleanNLP)
 cnlp_init_udpipe()
@@ -42,8 +48,7 @@ sotu_clean<-sotu %>%
 
 #remove special characters from word column
 sotu_token <-as.data.frame(gsub("[[:punct:]]", "", as.matrix(sotu_clean))) 
-sotu_tokens <-as.data.frame(gsub('[0-9]+', '', as.matrix(sotu_token))) 
-sotu_tokens <- as.data.frame(gsub("[[:space:]]", "", as.matrix(sotu_tokens)))
+sotu_tokens <-as.data.frame(gsub('[0-9]+', '', as.matrix(sotu_token$word))) 
 
 
 ```
@@ -68,12 +73,11 @@ sotu_clean %>%
 ```{r}
 # common words
 
-sotu_tokens %>%
+sotu_token %>%
   group_by (word) %>%
   summarize(n = n()) %>%
   arrange(desc(n)) %>%
-  #number 1 is blank
-  slice(2:21) %>%
+  slice(1:20) %>%
   ggplot ( mapping = aes ( x = reorder(word, n ), y = n))+
   geom_bar (stat= 'identity')+
   coord_flip()+
@@ -108,6 +112,138 @@ removeSparseTerms(sotu_dtm, sparse = 0.95)
 ```{r}
 sotu_topic<-LDA(sotu_dtm, k =16, control = list(seed = 123))
 
-```
-`
+terms <- posterior(sotu_topic)$terms
+topics <- posterior(sotu_topic)$topics
+topic_df <- tibble(topic = as.integer(col(topics)),
+                   val = as.numeric(topics))
+top_terms <- apply(terms, 1,
+               function(v) {
+                 paste(colnames(sotu_dtm)[order(v, decreasing = TRUE)[1:5]], collapse = ", ")
+                 })
+top_terms <- as.character(top_terms)
+?tapply
+index <- rank(-1 * tapply(topic_df$year * topic_df$val, topic_df$topic, which.max))
+topic_df$topic_new <- index[topic_df$topic]
+top_terms_df <- tibble(top_terms, topic = 1:length(top_terms))
+top_terms_df$topic_new <- index[top_terms_df$topic]
 
+ggplot(topic_df, aes(year, topic_new)) +
+  geom_point(aes(size = val, color = factor(topic_new)))
+
+
+
+```
+```{r}
+#sentiment
+
+sotu_sentiment <- sotu_token %>%
+  inner_join(get_sentiments())
+```
+
+```{r}
+# sentiment by president
+sotu_sentiment %>%
+  group_by (president, sentiment) %>%
+  summarize(n = n()) %>%
+  ggplot(aes ( x = sentiment, y = n, fill = sentiment))+
+  geom_bar(stat= 'identity')+
+  facet_wrap(.~ president) +
+  theme(legend.position="none")+
+  labs( title = "Sentiment in State of the Union by president",
+        x = "",
+        fill = "Sentiment")+
+  theme_minimal()
+```
+```{r}
+sotu_sentiment %>%
+  group_by(president) %>%
+  count(year, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)%>%
+  ggplot ( aes (x = year, y  = sentiment, fill = president))+
+  geom_col(show.legend= FALSE)+
+  scale_x_discrete(breaks= 10)+
+  theme_light()+
+  labs( title = "Trend of Sentiment",
+        x = "Year",
+        y = "Sentiment index")
+```
+```{r}
+# most common sentiment words
+ word_count <- sotu_sentiment %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+word_count %>%
+  group_by (sentiment) %>%
+  top_n(10) %>%
+  ungroup()  %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+ 
+
+```
+```{r}
+#word cloud
+
+sotu_token %>%
+  count(word) %>%
+ with(wordcloud(word, n, max.words = 50))
+
+
+```
+```{r}
+sotu_sentiment %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("grey20", "grey80"),
+                   max.words = 100)
+```
+
+```{r}
+
+sotu_bigram <- sotu %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+bigrams_separated <- sotu_bigram %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+# filter stop words
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+#occur more than  times
+bigram_graph <- bigram_counts %>%
+  filter(n > 70) %>%
+  graph_from_data_frame()
+
+set.seed(2017)
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+```
+
+```{r}
+set.seed(2020)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
