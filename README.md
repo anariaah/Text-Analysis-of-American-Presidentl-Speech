@@ -16,7 +16,13 @@ library(igraph)
 
 ```
 You might need to install some packages if they are not in your library. 
-install.packages()
+
+For instance, 
+```{r}
+install.packages("sotu")
+install.packages("ggraph")
+
+```
 
 ## SOTU
 
