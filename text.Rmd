@@ -339,7 +339,8 @@ sotu_top_terms %>%
   ggplot(aes(beta, term, fill = factor(topic))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
-  scale_y_reordered()
+  scale_y_reordered()+
+  theme_light()
 ```
 This graph shows the most common words for each topic. For topic 1, congress, unit, war, time, act, law are popular words. This topic might be related to military policy or domination or external policy like diplomacy.  For topic 2, most common words are govern, nation, people, congress. Topic 2 might be more related to internal policy. Particularly it might be related to populism. 
 
@@ -419,7 +420,8 @@ ggplot (data = sotu_gamma,
   geom_histogram()+
   facet_wrap(~ topic)+
    labs(title = "Distribution of probability for each topic",
-       y = "Number of documents", x = expression(gamma))+
+       y = "Number of documents", x = expression(gamma),
+       fill = "Topic")+
   theme_minimal()
 
 ```

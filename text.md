@@ -377,7 +377,8 @@ sotu_top_terms %>%
   ggplot(aes(beta, term, fill = factor(topic))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
-  scale_y_reordered()
+  scale_y_reordered()+
+  theme_light()
 ```
 
 ![](text_files/figure-gfm/unnamed-chunk-15-1.png)<!-- --> This graph
@@ -487,7 +488,8 @@ ggplot (data = sotu_gamma,
   geom_histogram()+
   facet_wrap(~ topic)+
    labs(title = "Distribution of probability for each topic",
-       y = "Number of documents", x = expression(gamma))+
+       y = "Number of documents", x = expression(gamma),
+       fill = "Topic")+
   theme_minimal()
 ```
 
