@@ -15,8 +15,7 @@ library(ggraph)
 library(igraph)
 
 ```
-You might need to install some packages if they are not in your library. 
-
+You might need to install some packages if they are not in your library.
 For instance, 
 ```{r}
 install.packages("sotu")
