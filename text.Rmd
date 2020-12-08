@@ -1,12 +1,17 @@
 ---
-title: "text"
+title: "Text Analysis: State of the Union"
 author: "Aria Huang"
-date: '2020-12-04'
-output: github_document
+date: "`r lubridate::today()`"
+output: 
+        github_document:
+          toc: true
+          toc_depth : 3
+          fig_width: 10
+          fig_height: 8
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(tidytext)
 library(here)
@@ -15,23 +20,22 @@ library(sotu)
 library(tm)
 library(wordcloud)
 library(reshape2)
-install.packages("ggraph")
 library(ggraph)
 library(igraph)
 
 
-library(cleanNLP)
-cnlp_init_udpipe()
 ```
+## Introduction
 
-## R Markdown
+This study examines the statement of the union for American presidents until 2016. Donald Trump is not included. This study examines the overall trends of the speeach, the common words, the sentiment, and topic modelling. The SOTU contains information about the president name, the year, text documents, party. Text analysis is an inductive method. 
+
+## Data tidy
 
 ```{r data}
 sotu<-sotu_meta
 # put the text into the column of meta dataset
 sotu$text <- sotu_text
 
-anno <- cnlp_annotate(sotu)
 ```
 
 ```{r text processing}
@@ -48,12 +52,28 @@ sotu_clean<-sotu %>%
 
 #remove special characters from word column
 sotu_token <-as.data.frame(gsub("[[:punct:]]", "", as.matrix(sotu_clean))) 
-sotu_tokens <-as.data.frame(gsub('[0-9]+', '', as.matrix(sotu_token$word))) 
+
 
 
 ```
+```{r pressure, echo=FALSE}
+# dtm
+sotu_dtm <-sotu %>%
+  unnest_tokens ( output = word, input = text ) %>%
+  filter ( !str_detect(word, ' ^[0-9]*')) %>%
+  anti_join (stop_words) %>%
+  mutate( word = SnowballC::wordStem (word)) %>%
+  count(president, word) %>%
+  cast_dtm( document = president,
+            term = word,
+            value = n)
+sotu_dtm 
 
-## Plots
+
+removeSparseTerms(sotu_dtm, sparse = 0.95)
+```
+
+## Exploratory analysis
 ```{r}
 # How the length of the State of the Union has changed over time
 sotu_clean %>%
@@ -70,6 +90,11 @@ sotu_clean %>%
           color= "Document type")
 
 ```
+
+
+The length of the Statement had increased from 1800 to the 1900, but declined until 1950, and become steady. The length for speech document is generally lower than the length of written document. 
+
+
 ```{r}
 # common words
 
@@ -88,105 +113,6 @@ sotu_token %>%
 
 
 ```
-
-
-```{r pressure, echo=FALSE}
-# dtm
-sotu_dtm <-sotu %>%
-  unnest_tokens ( output = word, input = text ) %>%
-  filter ( !str_detect(word, ' ^[0-9]*')) %>%
-  anti_join (stop_words) %>%
-  mutate( word = SnowballC::wordStem (word)) %>%
-  count(president, word) %>%
-  cast_dtm( document = president,
-            term = word,
-            value = n)
-sotu_dtm 
-
-sotu_clean %>%
-  cast_p
-
-removeSparseTerms(sotu_dtm, sparse = 0.95)
-```
-
-```{r}
-sotu_topic<-LDA(sotu_dtm, k =16, control = list(seed = 123))
-
-terms <- posterior(sotu_topic)$terms
-topics <- posterior(sotu_topic)$topics
-topic_df <- tibble(topic = as.integer(col(topics)),
-                   val = as.numeric(topics))
-top_terms <- apply(terms, 1,
-               function(v) {
-                 paste(colnames(sotu_dtm)[order(v, decreasing = TRUE)[1:5]], collapse = ", ")
-                 })
-top_terms <- as.character(top_terms)
-?tapply
-index <- rank(-1 * tapply(topic_df$year * topic_df$val, topic_df$topic, which.max))
-topic_df$topic_new <- index[topic_df$topic]
-top_terms_df <- tibble(top_terms, topic = 1:length(top_terms))
-top_terms_df$topic_new <- index[top_terms_df$topic]
-
-ggplot(topic_df, aes(year, topic_new)) +
-  geom_point(aes(size = val, color = factor(topic_new)))
-
-
-
-```
-```{r}
-#sentiment
-
-sotu_sentiment <- sotu_token %>%
-  inner_join(get_sentiments())
-```
-
-```{r}
-# sentiment by president
-sotu_sentiment %>%
-  group_by (president, sentiment) %>%
-  summarize(n = n()) %>%
-  ggplot(aes ( x = sentiment, y = n, fill = sentiment))+
-  geom_bar(stat= 'identity')+
-  facet_wrap(.~ president) +
-  theme(legend.position="none")+
-  labs( title = "Sentiment in State of the Union by president",
-        x = "",
-        fill = "Sentiment")+
-  theme_minimal()
-```
-```{r}
-sotu_sentiment %>%
-  group_by(president) %>%
-  count(year, sentiment) %>%
-  spread(sentiment, n, fill = 0) %>%
-  mutate(sentiment = positive - negative)%>%
-  ggplot ( aes (x = year, y  = sentiment, fill = president))+
-  geom_col(show.legend= FALSE)+
-  scale_x_discrete(breaks= 10)+
-  theme_light()+
-  labs( title = "Trend of Sentiment",
-        x = "Year",
-        y = "Sentiment index")
-```
-```{r}
-# most common sentiment words
- word_count <- sotu_sentiment %>%
-  count(word, sentiment, sort = TRUE) %>%
-  ungroup()
-
-word_count %>%
-  group_by (sentiment) %>%
-  top_n(10) %>%
-  ungroup()  %>%
-  mutate(word = reorder(word, n)) %>%
-  ggplot(aes(n, word, fill = sentiment)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~sentiment, scales = "free_y") +
-  labs(x = "Contribution to sentiment",
-       y = NULL)
- 
-
-```
 ```{r}
 #word cloud
 
@@ -196,14 +122,9 @@ sotu_token %>%
 
 
 ```
-```{r}
-sotu_sentiment %>%
-  count(word, sentiment, sort = TRUE) %>%
-  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
-  comparison.cloud(colors = c("grey20", "grey80"),
-                   max.words = 100)
-```
+These two graphs show the 50 most common words in the Statement of the Union. As the cloud graph shows, the most common words in State of the Union is govern, nation, and congress. The statements are highly political, and concerned with national building and government. Meanwhile, people, power, unit, america, and law, are also very common. Populism might be in trend, as american, people, unite pop out in the common words. 
 
+# Words networks
 ```{r}
 
 sotu_bigram <- sotu %>%
@@ -235,6 +156,8 @@ ggraph(bigram_graph, layout = "fr") +
 
 ```
 
+This graph shows the connections between common words in SOTU. There are one tree family in the networks. Those words are deb, public, money, human, governemnt, mexican, british, policy, foreign, trade... This indicates the connectedness of words related to policy, including foreign policy, financial policy, and property rights etc. Other than these linked words, other words are lighly connected. They tend to pair, but not connected to other pairs of words. 
+
 ```{r}
 set.seed(2020)
 
@@ -246,4 +169,262 @@ ggraph(bigram_graph, layout = "fr") +
   geom_node_point(color = "lightblue", size = 5) +
   geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
   theme_void()
+```
+
+There are some small clustering in this network, such as the clustering of government, mexican, british, or money, land, and public; or health, insurance, care. These clusterings indicate social issues like global policy, proprety rights, and healthcare. However most words in the network are disconnected, indicating that the SOTU dataset keywords are not organized into families of words that tend to go together. 
+
+
+```{r}
+#What is tf-idf for the description field words
+sotu_tf_idf <- sotu_token %>% 
+  count(president, word, sort = TRUE) %>%
+  ungroup() %>%
+  bind_tf_idf(word, president, n)
+
+```
+
+```{r}
+sotu_tf_idf %>%
+  arrange (-tf_idf) %>%
+  slice(1:10) %>%
+  ggplot( aes (x =reorder(word, tf_idf), y = tf_idf, fill = president))+
+  geom_bar(stat= 'identity')+
+  coord_flip()+
+  theme_light()+
+  labs( title = "Most important words for some presidents",
+        x = NULL,
+        fill = 'President')
+
+```
+
+
+These are the most important words in for president as measured by tf-idf, meaning they are common but not too common. Terrorist and Irap are the most important words for George W Bush, indicating the Iraq war. Tonight is very important to Clinton, Johnson, ad George Bush, while it remains in question: what does tognight imply?. Job is very important for Obabma, showing his concern on job market, employment. These words show that presidents concern a lot about war, as indicated by 1947, vietnam, iraq, war. 
+
+```{r}
+sotu_tf_idf_join <- full_join(sotu_tf_idf, sotu, by ='president')
+
+sotu_tf_idf_join %>%
+  filter(party != 'NA',
+         # no numbers
+         !str_detect(word, "(\\s+[A-Za-z]+)?[0-9-]+")) %>%
+  # no stop words
+  anti_join (stop_words) %>%
+  filter(!near(tf, 1)) %>%
+  arrange(desc(tf_idf)) %>%
+  # by party
+  group_by (party) %>%
+  distinct(word, party, .keep_all = TRUE) %>%
+  slice_max ( tf_idf, n= 15, with_ties = FALSE) %>%
+  ungroup() %>%
+   mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  ggplot(aes(tf_idf, word, fill = party)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~party, scales = "free") +
+  labs(title = "Highest tf-idf words in SOTU by partisanship",
+       x = "tf-idf", 
+       y = NULL)
+
+
+```
+
+Democrats value about job, program, soviet, nuclear, atom, communist. Democrats concern more about employment program and national security, and ideological construction (against communism). Republicans also concern about job program, soviet, having some similarities to democrats. But Republicans also value about budget, spend, percent, indicating their concern about monetary or financial plans. The valued words in other partisanship do not imply strong topics and clusterings. 
+
+
+# Sentiment analysis 
+```{r}
+#sentiment
+sotu_sentiment <- sotu_token %>%
+  inner_join(get_sentiments())
+```
+
+```{r}
+# sentiment by president
+
+sotu_sentiment %>%
+  #reorder according to year
+  mutate(president = fct_reorder(president, as.numeric(year))) %>%
+  group_by (president, sentiment) %>%
+  summarize(n = n()) %>%
+  ggplot(aes ( x = sentiment, 
+               y = n, 
+               fill = sentiment))+
+  geom_bar(stat= 'identity')+
+  facet_wrap(.~ president, 
+             ncol = 5) +
+  theme(legend.position="none")+
+  labs( title = "Sentiment in State of the Union by president",
+        x = NULL,
+        fill = "Sentiment")+
+  theme_minimal()
+```
+
+Most presidents have more positive sentiments than negative, except for Roose. This indicates that presidents tend to showcase their positiveness toward future in their statements.
+
+## Trend of sentiment over time
+```{r}
+sotu_sentiment %>%
+  group_by(president) %>%
+  count(year, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)%>%
+  ggplot ( aes (x = as.numeric(year), y  = sentiment, fill = fct_reorder(president, as.numeric(year))))+
+  geom_col()+
+  scale_x_continuous(breaks = seq(from = 1790, to = 2019, by = 8),
+                     #ajust the x asix
+                     guide = guide_axis(n.dodge = 2))+
+  theme_light()+
+  theme(legend.position = 'bottom')+
+  labs( title = "Trend of Sentiment",
+        x = NULL,
+        y = "Sentiment index", 
+        fill = "")
+
+
+```
+This graph shows the trend of sentiment. Overall, the sentiment tends to be positive, except for from 1918-1942, the sentiments were generally negative. This is due to the WWI, the great depression, and the WWII. Sentiments of the statements are highly connected to the political contexts. After Roosevelt, when Truman was the president, the sentiment returned to positive. In 1980s, the sentiment reached a peak again, which might be due to Regan's presidency and the increasing modern conservatism. George W. Bush's sentiment is also negative, which might be influenced by the Iraq War. Overall, the sentiment is associated with the global political context and domestic economic conditions. 
+
+
+
+## Most common sentiment words
+```{r}
+# most common sentiment words
+ word_count <- sotu_sentiment %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+
+word_count %>%
+  group_by (sentiment) %>%
+  top_n(10) %>%
+  ungroup()  %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+ 
+
+```
+
+The "object" is the word that contribute mostly to the negative sentiment, followed by "limit", "debt", "danger". Recommend" is the word that contribute most to positive sentiment word, followed by "protect" and "free". Negative sentiment is more connected to narratives like debt limit, financial issue. Positive sentiment is more related to rights, environmental-friendly consciousness, and future plan. 
+
+
+```{r}
+sotu_sentiment %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("grey20", "grey80"),
+                   max.words = 100)
+```
+
+
+# Topic modelling
+```{r}
+#topic 
+sotu_lda<-LDA(sotu_dtm, k =2, control = list(seed = 123))
+sotu_topic<- tidy(sotu_lda, matrix = 'beta')
+
+```
+## Most common words 
+```{r}
+# find the 10 terms that are most common within each topic. 
+sotu_top_terms <- sotu_topic %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange( topic, -beta) 
+  
+sotu_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+```
+This graph shows the most common words for each topic. For topic 1, congress, unit, war, time, act, law are popular words. This topic might be related to military policy or domination or external policy like diplomacy.  For topic 2, most common words are govern, nation, people, congress. Topic 2 might be more related to internal policy. Particularly it might be related to populism. 
+
+
+```{r}
+# The words with the greatest differences between topics
+beta_spread <- sotu_topic %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+
+#plot
+beta_spread %>%
+  arrange(desc(abs(log_ratio))) %>%
+  slice(1:20) %>%
+  ggplot( mapping = aes (y = log_ratio, x = reorder(term, log_ratio)))+
+  geom_bar(stat= 'identity')+
+  coord_flip()+
+  theme_light()+
+  labs ( title = "The words with the greatest differences between the two topics",
+         x = NULL,
+         y ="Log ratio")
+  
+
+```
+
+This graph shows the words with greatest differences between two topics. Nature, commit, office, commercial, set, exercise, citizen, connect are words that differ a lot between two topics. Compared to topic 1, topic 2 does not focus much on natural stuffs, such as environmental policy, it does not concern much about commitment or free market (indicated by commercial and tariff). 
+
+## Probability of topic
+
+We just explored each workd are associated with which topics and which words have the greatest difference between two topics.
+Next, let’s examine which topics are associated with which description fields (i.e., documents)
+
+```{r}
+# document topic prob
+#Each of these values is an estimated proportion of words from that document that are generated from that topic. 
+sotu_gamma <- tidy(sotu_lda, matrix = "gamma")
+
+# 55% of the Lincoln's statement comes from topic 1
+
+sotu_gamma
+
+```
+
+The gamma indicates the probability of the statement comes from topic 1. 
+
+```{r}
+# plot the gamma
+sotu_gamma %>%
+  mutate(title = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma, color = factor(topic))) +
+  geom_boxplot() +
+  facet_wrap(~ document, ncol= 5) +
+  labs(x = "topic", y = expression(gamma))
+
+
+```
+
+```{r}
+#How are the probabilities distributed?
+sotu_gamma %>%
+ggplot(aes(gamma)) +
+  geom_histogram(alpha = 0.8) +
+  labs(title = "Distribution of probabilities for all topics",
+       y = "Number of documents", x = expression(gamma))+
+  theme_minimal()
+  
+```
+Values near 1 indicate the documents that do belong in those topics, values near 0 indicate documents that do not belong in each topic. This distribution shows that the probability of belonging to a topic is pretty even, as most values concentrate in 0.4 to 0.6. 
+We can look at how the probabilities are distributed within each topic.
+
+```{r}
+
+ggplot (data = sotu_gamma, 
+        mapping = aes ( x = gamma, fill = as.factor(topic)))+
+  geom_histogram()+
+  facet_wrap(~ topic)+
+   labs(title = "Distribution of probability for each topic",
+       y = "Number of documents", x = expression(gamma))+
+  theme_minimal()
+
+```
+
+Both topic 1 and topic 2 have similar distribution of the probability. However, values are more leaning towards 1 for topics 2, indicating that topic 2 have more documents belong to the topic. 
+
+
 ```
